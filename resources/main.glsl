@@ -19,7 +19,7 @@ uniform Player[PLAYER_COUNT] players;
 
 #define PI 3.1415926538
 
-#define MIN_DISTANCE_MULTIPLIER 0.0001
+#define EPSILON 0.0001
 
 vec4 scale(float factor, vec4 pos) {
     return pos / factor;
@@ -122,17 +122,19 @@ float de_cube(vec4 pos) {
 
 //PutDEHere
 
-vec3 ray(vec3 start, vec3 direction) {
+vec3 ray2(vec3 start, vec3 direction, int depth) {
     float length = 0;
     bool hit = false;
     vec3 point;
     float dist;
     float counter = 0.0;
     float min_dist = 1000000.0;
+    vec3 colour;
+    vec3 reflection;
     while (length < 1000000 && counter < 1000) {
         point = start + direction * length;
         dist = de(vec4(point, 1.0));
-        if (dist < (MIN_DISTANCE_MULTIPLIER*min(max(length, 0.0001), 1))) {
+        if (dist < (EPSILON)) {
             hit = true;
             break;
         }
@@ -145,7 +147,66 @@ vec3 ray(vec3 start, vec3 direction) {
         //return ((point + 1) / 2) / counter * 10;
         //vec3 pos = floor((point + 1) * pow(3, 9) / 2);
         //return vec3(mod(pos.x+pos.y+pos.z, 2), 1.0, counter/100) / counter * 10;
-        return vec3(0.0, 1.0, counter/100) / counter * 10;
+        colour = vec3(0.0, 1.0, counter/100) / counter * 10;
+
+        return colour;
+
+
+    } else {
+        //return vec3(0.5, 0.5, 0.8);
+        //return vec3(0.0, 0.0, 1000000/length);
+        return vec3(0.0, 0.0, counter/100);
+    }
+
+}
+
+vec3 ray(vec3 start, vec3 direction, int depth) {
+    float length = 0;
+    bool hit = false;
+    vec3 point;
+    float dist;
+    float counter = 0.0;
+    float min_dist = 1000000.0;
+    vec3 colour;
+    vec3 reflection;
+    while (length < 1000000 && counter < 1000) {
+        point = start + direction * length;
+        dist = de(vec4(point, 1.0));
+        if (dist < (EPSILON)) {
+            hit = true;
+            break;
+        }
+        length += dist;
+        counter += 1.0;
+        min_dist = min(dist, min_dist);
+    }
+
+    if (hit) {
+        //return ((point + 1) / 2) / counter * 10;
+        //vec3 pos = floor((point + 1) * pow(3, 9) / 2);
+        //return vec3(mod(pos.x+pos.y+pos.z, 2), 1.0, counter/100) / counter * 10;
+        colour = vec3(0.0, 1.0, counter/100) / counter * 10;
+
+        if (depth == 1) {
+            return colour;
+        }
+
+        float normalX = de(vec4(point + vec3(EPSILON, 0.0, 0.0), 1.0));
+        float normalY = de(vec4(point + vec3(0.0, EPSILON, 0.0), 1.0));
+        float normalZ = de(vec4(point + vec3(0.0, 0.0, EPSILON), 1.0));
+        float normalantiX = de(vec4(point + vec3(-EPSILON, 0.0, 0.0), 1.0));
+        float normalantiY = de(vec4(point + vec3(0.0, -EPSILON, 0.0), 1.0));
+        float normalantiZ = de(vec4(point + vec3(0.0, 0.0, -EPSILON), 1.0));
+
+
+        vec3 normal = normalize(vec3(normalX - normalantiX, normalY - normalantiY, normalZ - normalantiZ));
+
+        vec3 reflectionRay = direction - 2 * normal * (direction * normal);
+
+        reflection = ray2(point+(reflectionRay*EPSILON), reflectionRay, 1);
+
+        return colour * 0.5 + reflection * 0.5;
+        //return (normal + 1.0) / 2;
     } else {
         //return vec3(0.5, 0.5, 0.8);
         //return vec3(0.0, 0.0, 1000000/length);
@@ -175,7 +236,7 @@ void main() {
     //pixel.rg = point;
     //pixel.rgb = ray(vec3(point, -5.0), vec3(0.0, 0.0, 1.0));
     //pixel.rgb = ray(cameraPos, normalize(rayDirection));
-    pixel.rgb = ray(cameraPos, normalize(rayDirection));
+    pixel.rgb = ray(cameraPos, normalize(rayDirection), 0);
 
     imageStore(destTex, pixel_coords, pixel);
 }
