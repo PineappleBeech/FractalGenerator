@@ -15,6 +15,7 @@ struct RayResult {
     int count;
     bool hit;
     vec3 point;
+    vec3 direction;
 };
 
 #define PLAYER_COUNT 1
@@ -170,12 +171,8 @@ RayResult ray(vec3 start, vec3 direction) {
 
     vec3 offsetPoint = point + getNormal(point) * EPSILON;
 
-    RayResult result = RayResult(start, point, length, int(counter), hit, offsetPoint);
+    RayResult result = RayResult(start, point, length, int(counter), hit, offsetPoint, direction);
     return result;
-}
-
-vec3 getReflection(vec3 incident, vec3 normal) {
-    return incident - 2 * normal * (incident * normal);
 }
 
 float ambientOcculsion(vec3 point, vec3 normal) {
@@ -192,6 +189,30 @@ float angleBetween(vec3 a, vec3 b) {
     return acos(dot(a, b));
 }
 
+vec3 getColour(RayResult result) {
+    vec3 sunDirection = normalize(vec3(1.0, 1.0, 1.0));
+    vec3 sunColour = vec3(2.0, 2.0, 2.0);
+
+    vec3 skyColour = vec3(0.0, 0.0, 1.0);
+    vec3 materialColour = vec3(0.0, 0.5, 0.0);
+
+    vec3 colour;
+    if (result.hit) {
+        colour = materialColour;
+        colour *= ambientOcculsion(result.point, getNormal(result.point));
+
+        RayResult sunRay = ray(result.point, sunDirection);
+
+        if (!sunRay.hit) {
+            colour *= sunColour;
+        }
+
+    } else {
+        colour = skyColour;
+    }
+    return colour;
+}
+
 void main() {
     vec4 pixel = vec4(0.0, 0.0, 0.0, 1.0);
     ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
@@ -203,43 +224,46 @@ void main() {
 
     RayResult result = ray(cameraPos, rayDirection);
 
-    vec3 sunDirection = normalize(vec3(1.0, 1.0, 1.0));
-
     vec3 colour;
 
+    colour = getColour(result);
+
+    /*vec3 reflection;
     if (result.hit) {
-        colour = vec3(0.0, 1.0, 0.0);
+        reflection = getColour(ray(result.point, reflect(rayDirection, getNormal(result.point))));
+        colour = mix(colour, reflection, 0.5);
+    }*/
 
-        colour *= ambientOcculsion(result.point, getNormal(result.point));
+    const int reflectionCount = 5;
 
-        RayResult sunRay = ray(result.point, sunDirection);
+    RayResult[reflectionCount] reflections;
+    int bounces = 0;
 
-        if (sunRay.hit) {
-            colour *= 0.5;
-        }
-
-        vec3 reflection = reflect(rayDirection, getNormal(result.point));
-        RayResult reflectionRay = ray(result.point, reflection);
-        vec3 reflectionColour;
-        if (reflectionRay.hit) {
-            reflectionColour = getNormal(reflectionRay.point);
-            reflectionColour = vec3(0.0, 1.0, 0.0);
-            reflectionColour *= ambientOcculsion(reflectionRay.point, getNormal(reflectionRay.point));
-            sunRay = ray(reflectionRay.point, sunDirection);
-            if (sunRay.hit) {
-                reflectionColour *= 0.5;
+    for (int i = 0; i < reflectionCount; i++) {
+        if (i == 0) {
+            if (result.hit) {
+                reflections[i] = ray(result.point, reflect(rayDirection, getNormal(result.point)));
+                bounces++;
+            } else {
+                break;
             }
         } else {
-            reflectionColour = vec3(0.0, 0.0, 1.0);
+            if (reflections[i - 1].hit) {
+                reflections[i] = ray(reflections[i - 1].point, reflect(reflections[i - 1].direction, getNormal(reflections[i - 1].point)));
+                bounces++;
+            } else {
+                break;
+            }
         }
-
-        colour = mix(colour, reflectionColour, 0.5);
-
-    } else {
-        colour = vec3(0.0, 0.0, 1.0);
     }
 
-    //colour = result.point;
+    vec3 reflectionColour = getColour(reflections[bounces - 1]);
+
+    for (int i = bounces - 2; i >= 0; i--) {
+        reflectionColour = mix(getColour(reflections[i]), reflectionColour, 0.5);
+    }
+
+    colour = mix(colour, reflectionColour, 0.5);
 
     pixel.rgb = colour;
 
