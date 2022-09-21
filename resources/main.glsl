@@ -8,6 +8,15 @@ struct Player {
     float scale;
 };
 
+struct RayResult {
+    vec3 start;
+    vec3 end;
+    float dist;
+    int count;
+    bool hit;
+    vec3 point;
+};
+
 #define PLAYER_COUNT 1
 
 uniform vec2 windowSize;
@@ -19,7 +28,7 @@ uniform Player[PLAYER_COUNT] players;
 
 #define PI 3.1415926538
 
-#define EPSILON 0.0001
+#define EPSILON (0.0001*speedScale)
 
 vec4 scale(float factor, vec4 pos) {
     return pos / factor;
@@ -122,46 +131,24 @@ float de_cube(vec4 pos) {
 
 //PutDEHere
 
-vec3 ray2(vec3 start, vec3 direction, int depth) {
-    float length = 0;
-    bool hit = false;
-    vec3 point;
-    float dist;
-    float counter = 0.0;
-    float min_dist = 1000000.0;
-    vec3 colour;
-    vec3 reflection;
-    while (length < 1000000 && counter < 1000) {
-        point = start + direction * length;
-        dist = de(vec4(point, 1.0));
-        if (dist < (EPSILON)) {
-            hit = true;
-            break;
-        }
-        length += dist;
-        counter += 1.0;
-        min_dist = min(dist, min_dist);
-    }
-
-    if (hit) {
-        //return ((point + 1) / 2) / counter * 10;
-        //vec3 pos = floor((point + 1) * pow(3, 9) / 2);
-        //return vec3(mod(pos.x+pos.y+pos.z, 2), 1.0, counter/100) / counter * 10;
-        colour = vec3(0.0, 1.0, counter/100) / counter * 10;
-
-        return colour;
-
-
-    } else {
-        //return vec3(0.5, 0.5, 0.8);
-        //return vec3(0.0, 0.0, 1000000/length);
-        return vec3(0.0, 0.0, counter/100);
-    }
-
+float de(vec3 pos) {
+    return de(vec4(pos, 1.0));
 }
 
-vec3 ray(vec3 start, vec3 direction, int depth) {
-    float length = 0;
+vec3 getNormal(vec3 point) {
+    float normalX = de(vec4(point + vec3(EPSILON, 0.0, 0.0), 1.0));
+    float normalY = de(vec4(point + vec3(0.0, EPSILON, 0.0), 1.0));
+    float normalZ = de(vec4(point + vec3(0.0, 0.0, EPSILON), 1.0));
+    float normalantiX = de(vec4(point + vec3(-EPSILON, 0.0, 0.0), 1.0));
+    float normalantiY = de(vec4(point + vec3(0.0, -EPSILON, 0.0), 1.0));
+    float normalantiZ = de(vec4(point + vec3(0.0, 0.0, -EPSILON), 1.0));
+
+    vec3 normal = normalize(vec3(normalX - normalantiX, normalY - normalantiY, normalZ - normalantiZ));
+    return normal;
+}
+
+RayResult ray(vec3 start, vec3 direction) {
+    float length = de(start);
     bool hit = false;
     vec3 point;
     float dist;
@@ -181,62 +168,80 @@ vec3 ray(vec3 start, vec3 direction, int depth) {
         min_dist = min(dist, min_dist);
     }
 
-    if (hit) {
-        //return ((point + 1) / 2) / counter * 10;
-        //vec3 pos = floor((point + 1) * pow(3, 9) / 2);
-        //return vec3(mod(pos.x+pos.y+pos.z, 2), 1.0, counter/100) / counter * 10;
-        colour = vec3(0.0, 1.0, counter/100) / counter * 10;
+    vec3 offsetPoint = point + getNormal(point) * EPSILON;
 
-        if (depth == 1) {
-            return colour;
-        }
+    RayResult result = RayResult(start, point, length, int(counter), hit, offsetPoint);
+    return result;
+}
 
-        float normalX = de(vec4(point + vec3(EPSILON, 0.0, 0.0), 1.0));
-        float normalY = de(vec4(point + vec3(0.0, EPSILON, 0.0), 1.0));
-        float normalZ = de(vec4(point + vec3(0.0, 0.0, EPSILON), 1.0));
-        float normalantiX = de(vec4(point + vec3(-EPSILON, 0.0, 0.0), 1.0));
-        float normalantiY = de(vec4(point + vec3(0.0, -EPSILON, 0.0), 1.0));
-        float normalantiZ = de(vec4(point + vec3(0.0, 0.0, -EPSILON), 1.0));
+vec3 getReflection(vec3 incident, vec3 normal) {
+    return incident - 2 * normal * (incident * normal);
+}
 
-
-        vec3 normal = normalize(vec3(normalX - normalantiX, normalY - normalantiY, normalZ - normalantiZ));
-
-        vec3 reflectionRay = direction - 2 * normal * (direction * normal);
-
-        reflection = ray2(point+(reflectionRay*EPSILON), reflectionRay, 1);
-
-        return colour * 0.5 + reflection * 0.5;
-        //return (normal + 1.0) / 2;
-    } else {
-        //return vec3(0.5, 0.5, 0.8);
-        //return vec3(0.0, 0.0, 1000000/length);
-        return vec3(0.0, 0.0, counter/100);
+float ambientOcculsion(vec3 point, vec3 normal) {
+    float occulsion = 1.0;
+    float step = 0.01;
+    for (float i = 1; i < 4.9; i++) {
+        occulsion -= (step * i) - de(point + normal * (step * i));
     }
 
+    return occulsion;
+}
+
+float angleBetween(vec3 a, vec3 b) {
+    return acos(dot(a, b));
 }
 
 void main() {
-    vec4 pixel = vec4(0.0, 1.0, 0.0, 1.0);
+    vec4 pixel = vec4(0.0, 0.0, 0.0, 1.0);
     ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
-/*
-    vec2 point = pixel_coords / windowSize.x;
-    point = 2 * point - vec2(1.0, windowSize.y/windowSize.x);
-*/
     vec2 point = (pixel_coords * 2 - windowSize) / windowSize.x;
-    //point.y = -point.y;
     vec3 rayFromCamera = vec3(point, -1.0);
-
-    /*vec3 rayOrigin = (cameraMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-    vec3 rayOffset = (cameraMatrix * vec4(rayFromCamera, 0.0)).xyz;
-
-    vec3 rayDirection = rayOffset - rayOrigin;*/
     rayFromCamera = normalize(rayFromCamera);
     vec3 rayDirection = cameraMatrix * rayFromCamera;
+    rayDirection = normalize(rayDirection);
 
-    //pixel.rg = point;
-    //pixel.rgb = ray(vec3(point, -5.0), vec3(0.0, 0.0, 1.0));
-    //pixel.rgb = ray(cameraPos, normalize(rayDirection));
-    pixel.rgb = ray(cameraPos, normalize(rayDirection), 0);
+    RayResult result = ray(cameraPos, rayDirection);
+
+    vec3 sunDirection = normalize(vec3(1.0, 1.0, 1.0));
+
+    vec3 colour;
+
+    if (result.hit) {
+        colour = vec3(0.0, 1.0, 0.0);
+
+        colour *= ambientOcculsion(result.point, getNormal(result.point));
+
+        RayResult sunRay = ray(result.point, sunDirection);
+
+        if (sunRay.hit) {
+            colour *= 0.5;
+        }
+
+        vec3 reflection = reflect(rayDirection, getNormal(result.point));
+        RayResult reflectionRay = ray(result.point, reflection);
+        vec3 reflectionColour;
+        if (reflectionRay.hit) {
+            reflectionColour = getNormal(reflectionRay.point);
+            reflectionColour = vec3(0.0, 1.0, 0.0);
+            reflectionColour *= ambientOcculsion(reflectionRay.point, getNormal(reflectionRay.point));
+            sunRay = ray(reflectionRay.point, sunDirection);
+            if (sunRay.hit) {
+                reflectionColour *= 0.5;
+            }
+        } else {
+            reflectionColour = vec3(0.0, 0.0, 1.0);
+        }
+
+        colour = mix(colour, reflectionColour, 0.5);
+
+    } else {
+        colour = vec3(0.0, 0.0, 1.0);
+    }
+
+    //colour = result.point;
+
+    pixel.rgb = colour;
 
     imageStore(destTex, pixel_coords, pixel);
 }

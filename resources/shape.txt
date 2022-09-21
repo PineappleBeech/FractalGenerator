@@ -130,6 +130,9 @@ endfunction
 
 cube
 
+#translate 2 2 2
+#mirror xyz
+
 loop $step
 menger
 endloop
