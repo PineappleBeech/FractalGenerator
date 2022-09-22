@@ -29,7 +29,9 @@ uniform Player[PLAYER_COUNT] players;
 
 #define PI 3.1415926538
 
-#define EPSILON (0.0001*speedScale)
+#define EPSILON (0.001*speedScale)
+
+float distanceFromObject;
 
 vec4 scale(float factor, vec4 pos) {
     return pos / factor;
@@ -87,11 +89,24 @@ float expand(float radius, float distance) {
     return distance - radius;
 }
 
-vec4 mengerFold(vec4 pos) {
+vec4 sierpinskiFold(vec4 pos) {
     if (pos.x+pos.y<0) {pos.xy =- pos.yx;}
     if (pos.x+pos.z<0) {pos.xz =- pos.zx;}
     if (pos.y+pos.z<0) {pos.yz =- pos.zy;}
     return pos;
+}
+
+vec4 mengerFold(vec4 z) {
+	float a = min(z.x - z.y, 0.0);
+	z.x -= a;
+	z.y += a;
+	a = min(z.x - z.z, 0.0);
+	z.x -= a;
+	z.z += a;
+	a = min(z.y - z.z, 0.0);
+	z.y -= a;
+	z.z += a;
+    return z;
 }
 
 vec4 menger(vec4 pos) {
@@ -123,6 +138,20 @@ float de_sphere(vec4 pos) {
 
 float de_cube(vec4 pos) {
     return (length(max(abs(pos.xyz) - 1.0, 0.0)) / pos.w);// - min(max(pos.x, max(pos.y, pos.z)), 0.0));
+}
+
+float de_marbleMarcher(int iterations, float angle1, float angle2, float scale, vec3 shift, vec4 pos) {
+    //pos /= 6.0;
+    for (int i = 0; i < iterations; i++) {
+        pos.xyz = abs(pos.xyz);
+        pos = rotateXY(angle1, pos);
+        pos = mengerFold(pos);
+        pos = rotateYZ(angle2, pos);
+        pos *= scale;
+        pos.xyz += shift;
+    }
+    pos /= 6.0;
+    return de_cube(pos);
 }
 
 /*float de(vec4 pos) {
@@ -157,7 +186,7 @@ RayResult ray(vec3 start, vec3 direction) {
     float min_dist = 1000000.0;
     vec3 colour;
     vec3 reflection;
-    while (length < 1000000 && counter < 1000) {
+    while (length < 10000 && counter < 1000) {
         point = start + direction * length;
         dist = de(vec4(point, 1.0));
         if (dist < (EPSILON)) {
@@ -179,6 +208,7 @@ float ambientOcculsion(vec3 point, vec3 normal) {
     float occulsion = 1.0;
     float step = 0.01;
     for (float i = 1; i < 4.9; i++) {
+        //occulsion -= pow((step * i) - de(point + normal * (step * i)), 2.0) / i;
         occulsion -= (step * i) - de(point + normal * (step * i));
     }
 
@@ -191,10 +221,10 @@ float angleBetween(vec3 a, vec3 b) {
 
 vec3 getColour(RayResult result) {
     vec3 sunDirection = normalize(vec3(1.0, 1.0, 1.0));
-    vec3 sunColour = vec3(2.0, 2.0, 2.0);
+    vec3 sunColour = vec3(1.5, 1.5, 1.0);
 
-    vec3 skyColour = vec3(0.0, 0.0, 1.0);
-    vec3 materialColour = vec3(0.0, 0.5, 0.0);
+    vec3 skyColour = vec3(0.471, 0.655, 1.0);
+    vec3 materialColour = vec3(0.2, 0.6, 0.0);
 
     vec3 colour;
     if (result.hit) {
@@ -221,6 +251,7 @@ void main() {
     rayFromCamera = normalize(rayFromCamera);
     vec3 rayDirection = cameraMatrix * rayFromCamera;
     rayDirection = normalize(rayDirection);
+    distanceFromObject = de(cameraPos);
 
     RayResult result = ray(cameraPos, rayDirection);
 
@@ -234,36 +265,41 @@ void main() {
         colour = mix(colour, reflection, 0.5);
     }*/
 
-    const int reflectionCount = 5;
+    const int reflectionCount = 0;
+    float reflectivity = 0.5;
 
-    RayResult[reflectionCount] reflections;
-    int bounces = 0;
+    if (reflectionCount > 0) {
+        RayResult[reflectionCount > 0 ? reflectionCount : 1] reflections;
+        int bounces = 0;
 
-    for (int i = 0; i < reflectionCount; i++) {
-        if (i == 0) {
-            if (result.hit) {
-                reflections[i] = ray(result.point, reflect(rayDirection, getNormal(result.point)));
-                bounces++;
+        for (int i = 0; i < reflectionCount; i++) {
+            if (i == 0) {
+                if (result.hit) {
+                    reflections[i] = ray(result.point, reflect(rayDirection, getNormal(result.point)));
+                    bounces++;
+                } else {
+                    break;
+                }
             } else {
-                break;
-            }
-        } else {
-            if (reflections[i - 1].hit) {
-                reflections[i] = ray(reflections[i - 1].point, reflect(reflections[i - 1].direction, getNormal(reflections[i - 1].point)));
-                bounces++;
-            } else {
-                break;
+                if (reflections[i - 1].hit) {
+                    reflections[i] = ray(reflections[i - 1].point, reflect(reflections[i - 1].direction, getNormal(reflections[i - 1].point)));
+                    bounces++;
+                } else {
+                    break;
+                }
             }
         }
+
+        if (bounces > 0) {
+            vec3 reflectionColour = getColour(reflections[bounces - 1]);
+
+            for (int i = bounces - 2; i >= 0; i--) {
+                reflectionColour = mix(getColour(reflections[i]), reflectionColour, reflectivity);
+            }
+
+            colour = mix(colour, reflectionColour, reflectivity);
+        }
     }
-
-    vec3 reflectionColour = getColour(reflections[bounces - 1]);
-
-    for (int i = bounces - 2; i >= 0; i--) {
-        reflectionColour = mix(getColour(reflections[i]), reflectionColour, 0.5);
-    }
-
-    colour = mix(colour, reflectionColour, 0.5);
 
     pixel.rgb = colour;
 

@@ -72,6 +72,17 @@ float de(vec4 pos) {
             requires(return_type, ReturnType.FLOAT)
             return "de_sphere(" + self.read_command(code_reader) + ")"
 
+        elif keyword == "marble":
+            requires(return_type, ReturnType.FLOAT)
+            iterations = self.process_arg(args[0])
+            angle1 = self.process_arg(args[1])
+            angle2 = self.process_arg(args[2])
+            scale = self.process_arg(args[3])
+            shift1 = self.process_arg(args[4])
+            shift2 = self.process_arg(args[5])
+            shift3 = self.process_arg(args[6])
+            return "de_marbleMarcher(" + iterations + ", " + angle1 + ", " + angle2 + ", " + scale + ", vec3(" + shift1 + ", " + shift2 + ", " + shift3 + "), " + self.read_command(code_reader) + ")"
+
         elif keyword == "mirror":
 
             requires(return_type, ReturnType.VEC3)
@@ -118,6 +129,10 @@ float de(vec4 pos) {
         elif keyword == "menger_fold":
             requires(return_type, ReturnType.VEC3)
             return "mengerFold(" + self.read_command(code_reader) + ")"
+
+        elif keyword == "sierpinski_fold":
+            requires(return_type, ReturnType.VEC3)
+            return "sierpinskiFold(" + self.read_command(code_reader) + ")"
 
         elif keyword == "repeat":
             requires(return_type, ReturnType.VEC3)
